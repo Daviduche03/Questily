@@ -97,7 +97,7 @@ export function ChatForm({ className }: { className?: string }) {
           
           {/* Enhanced title with gradient text */}
           <h1 className="text-5xl font-bold bg-gradient-to-r from-foreground via-foreground/90 to-foreground/70 bg-clip-text text-transparent mb-4">
-            AI Search
+            Questily
           </h1>
           <p className="text-xl text-muted-foreground max-w-md mx-auto leading-relaxed">
             Ask me anything and I'll search the web for comprehensive answers

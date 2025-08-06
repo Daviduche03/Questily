@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "AI Search - Ask Anything",
-  description: "A powerful AI search engine that can answer any question",
+  title: "Questily - Ask Anything",
+  description: "A powerful Questily engine that can answer any question",
 };
 
 export default function RootLayout({
