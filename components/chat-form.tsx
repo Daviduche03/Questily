@@ -2,470 +2,22 @@
 
 import { cn } from "@/lib/utils"
 import { useChat } from "@ai-sdk/react"
-import { ArrowUpIcon, Loader2, UserCircle, Bot, Search, Command, TrendingUp, TrendingDown, Copy, Check } from "lucide-react"
+import { Command, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { AutoResizeTextarea } from "@/components/autoresize-textarea"
 import React from "react"
 import { format } from "date-fns"
 
-// Types
-interface SearchResult {
-  title: string
-  snippet: string
-  source: string
-}
-
-interface StockDataPoint {
-  date: string
-  timestamp: number
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number
-}
-
-interface StockData {
-  symbol: string
-  company_name: string
-  period: string
-  interval: string
-  current_price: number
-  change: number
-  change_percent: number
-  market_cap: number
-  pe_ratio: string
-  dividend_yield: string
-  ma_20: number | null
-  ma_50: number | null
-  data_points: number
-  chart_data: StockDataPoint[]
-  chart_type: string
-  last_updated: string
-  data_range: {
-    start: string
-    end: string
-  }
-}
-
-interface ToolInvocation {
-  toolName: string
-  toolCallId: string
-  args: any
-  result?: string
-  state: string
-  step: number
-}
-
-interface ToolPart {
-  type: string
-  toolCallId?: string
-  state?: 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
-  input?: any
-  output?: any
-  errorText?: string
-  toolInvocation?: ToolInvocation
-}
-
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  parts: (ToolPart | { type: 'text', text: string })[]
-}
-
-// Constants
-const CONVERSATION_ID = "3a99f679-12f5-4776-b231-034aecc5f78c"
-const FOLLOW_UP_SUGGESTIONS = [
-  "Tell me more about this",
-  "Can you explain it differently?",
-  "Give me an example"
-]
-
-// Markdown renderer component
-const MarkdownRenderer = ({ content }: { content: string }) => {
-  const [copiedCode, setCopiedCode] = React.useState<string | null>(null)
-
-  const copyToClipboard = async (text: string, id: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopiedCode(id)
-      setTimeout(() => setCopiedCode(null), 2000)
-    } catch (err) {
-      console.error('Failed to copy text: ', err)
-    }
-  }
-
-  const renderMarkdown = (text: string) => {
-    const lines = text.split('\n')
-    const elements: React.ReactNode[] = []
-    let i = 0
-
-    while (i < lines.length) {
-      const line = lines[i]
-
-      // Code blocks (```)
-      if (line.trim().startsWith('```')) {
-        const language = line.trim().slice(3).trim()
-        const codeLines: string[] = []
-        i++
-        
-        while (i < lines.length && !lines[i].trim().startsWith('```')) {
-          codeLines.push(lines[i])
-          i++
-        }
-        
-        const codeContent = codeLines.join('\n')
-        const codeId = `code-${elements.length}`
-        
-        elements.push(
-          <div key={elements.length} className="my-3 rounded-lg border bg-muted/30 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b">
-              <span className="text-xs font-medium text-muted-foreground">
-                {language || 'code'}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2"
-                onClick={() => copyToClipboard(codeContent, codeId)}
-              >
-                {copiedCode === codeId ? (
-                  <Check className="w-3 h-3" />
-                ) : (
-                  <Copy className="w-3 h-3" />
-                )}
-              </Button>
-            </div>
-            <pre className="p-4 text-sm overflow-x-auto">
-              <code>{codeContent}</code>
-            </pre>
-          </div>
-        )
-        i++
-        continue
-      }
-
-      // Headers
-      if (line.startsWith('# ')) {
-        elements.push(
-          <h1 key={elements.length} className="text-xl font-bold mt-4 mb-2 text-foreground">
-            {line.slice(2)}
-          </h1>
-        )
-      } else if (line.startsWith('## ')) {
-        elements.push(
-          <h2 key={elements.length} className="text-lg font-semibold mt-3 mb-1 text-foreground">
-            {line.slice(3)}
-          </h2>
-        )
-      } else if (line.startsWith('### ')) {
-        elements.push(
-          <h3 key={elements.length} className="text-base font-semibold mt-2 mb-1 text-foreground">
-            {line.slice(4)}
-          </h3>
-        )
-      }
-      // Lists
-      else if (line.match(/^[\s]*[-*+]\s/)) {
-        const listItems: string[] = []
-        while (i < lines.length && lines[i].match(/^[\s]*[-*+]\s/)) {
-          listItems.push(lines[i].replace(/^[\s]*[-*+]\s/, ''))
-          i++
-        }
-        i-- // Back up one since we'll increment at the end
-        
-        elements.push(
-          <ul key={elements.length} className="my-2 ml-4 space-y-0.5">
-            {listItems.map((item, idx) => (
-              <li key={idx} className="flex items-start gap-2">
-                <span className="w-1 h-1 bg-foreground rounded-full mt-2 flex-shrink-0" />
-                <span>{renderInlineMarkdown(item)}</span>
-              </li>
-            ))}
-          </ul>
-        )
-      }
-      // Numbered lists
-      else if (line.match(/^[\s]*\d+\.\s/)) {
-        const listItems: string[] = []
-        while (i < lines.length && lines[i].match(/^[\s]*\d+\.\s/)) {
-          listItems.push(lines[i].replace(/^[\s]*\d+\.\s/, ''))
-          i++
-        }
-        i-- // Back up one since we'll increment at the end
-        
-        elements.push(
-          <ol key={elements.length} className="my-2 ml-4 space-y-0.5">
-            {listItems.map((item, idx) => (
-              <li key={idx} className="flex items-start gap-2">
-                <span className="text-sm font-medium text-muted-foreground min-w-[1.5rem]">
-                  {idx + 1}.
-                </span>
-                <span>{renderInlineMarkdown(item)}</span>
-              </li>
-            ))}
-          </ol>
-        )
-      }
-      // Blockquotes
-      else if (line.startsWith('> ')) {
-        const quoteLines: string[] = []
-        while (i < lines.length && lines[i].startsWith('> ')) {
-          quoteLines.push(lines[i].slice(2))
-          i++
-        }
-        i-- // Back up one since we'll increment at the end
-        
-        elements.push(
-          <blockquote key={elements.length} className="my-2 pl-3 border-l-2 border-primary/30 bg-muted/20 py-1 rounded-r">
-            <div className="text-muted-foreground italic text-sm">
-              {quoteLines.map((quoteLine, idx) => (
-                <p key={idx} className="my-0">{renderInlineMarkdown(quoteLine)}</p>
-              ))}
-            </div>
-          </blockquote>
-        )
-      }
-      // Regular paragraphs
-      else if (line.trim()) {
-        elements.push(
-          <p key={elements.length} className="mb-1 leading-relaxed">
-            {renderInlineMarkdown(line)}
-          </p>
-        )
-      }
-      // Empty lines - only add spacing if the next line has content
-      else if (i < lines.length - 1 && lines[i + 1]?.trim()) {
-        elements.push(<div key={elements.length} className="h-2" />)
-      }
-
-      i++
-    }
-
-    return elements
-  }
-
-  const renderInlineMarkdown = (text: string) => {
-    // Bold **text**
-    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    // Italic *text*
-    text = text.replace(/\*(.*?)\*/g, '<em>$1</em>')
-    // Inline code `code`
-    text = text.replace(/`([^`]+)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-sm font-mono">$1</code>')
-    // Links [text](url)
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">$1</a>')
-
-    return <span dangerouslySetInnerHTML={{ __html: text }} />
-  }
-
-  return <div className="markdown-content">{renderMarkdown(content)}</div>
-}
-
 // Components
-const SearchResultCard = ({ result, index }: { result: SearchResult; index: number }) => (
-  <div
-    key={index}
-    className="bg-card w-[300px] flex-none rounded-lg border p-4 hover:shadow-md transition-shadow cursor-pointer"
-  >
-    <h3 className="font-medium text-foreground leading-tight line-clamp-2 mb-2">
-      {result.title || 'Untitled'}
-    </h3>
-    <p className="text-sm text-muted-foreground line-clamp-3 mb-3">
-      {result.snippet || 'No description available'}
-    </p>
-    <span className="text-xs text-muted-foreground">
-      {result.source || 'Unknown source'}
-    </span>
-  </div>
-)
+import { MarkdownRenderer } from "@/components/markdown-renderer"
+import { MessageAvatar } from "@/components/chat/message-avatar"
+import { LoadingIndicator } from "@/components/chat/loading-indicator"
+import { SearchInput } from "@/components/chat/search-input"
+import { ToolRenderer, ToolPart } from "@/components/chat/tool-renderer"
 
-const StockChart = ({ stockData }: { stockData: StockData }) => {
-  const formatPrice = (price: number) => `$${price.toFixed(2)}`
-  const formatMarketCap = (cap: number) => {
-    if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`
-    if (cap >= 1e9) return `$${(cap / 1e9).toFixed(2)}B`
-    if (cap >= 1e6) return `$${(cap / 1e6).toFixed(2)}M`
-    return `$${cap.toLocaleString()}`
-  }
+// Types
+import { ChatMessage, CONVERSATION_ID, FOLLOW_UP_SUGGESTIONS } from "@/types/chat"
 
-  const isPositive = stockData.change >= 0
-  const maxPrice = Math.max(...stockData.chart_data.map(d => d.high))
-  const minPrice = Math.min(...stockData.chart_data.map(d => d.low))
-  const priceRange = maxPrice - minPrice
 
-  return (
-    <div className="w-full bg-card border rounded-xl p-6 mb-4">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="text-xl font-semibold text-foreground">
-            {stockData.symbol} - {stockData.company_name}
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            {stockData.period} • {stockData.interval} intervals
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="text-2xl font-bold text-foreground">
-            {formatPrice(stockData.current_price)}
-          </div>
-          <div className={cn(
-            "flex items-center gap-1 text-sm font-medium",
-            isPositive ? "text-green-600" : "text-red-600"
-          )}>
-            {isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-            {isPositive ? '+' : ''}{formatPrice(stockData.change)} ({stockData.change_percent.toFixed(2)}%)
-          </div>
-        </div>
-      </div>
-
-      {/* Chart */}
-      <div className="mb-6">
-        <div className="h-64 bg-muted/20 rounded-lg p-4 relative overflow-hidden">
-          <svg width="100%" height="100%" className="absolute inset-0">
-            {stockData.chart_data.map((dataPoint, index) => {
-              const x = (index / (stockData.chart_data.length - 1)) * 100
-              const bodyTop = ((maxPrice - Math.max(dataPoint.open, dataPoint.close)) / priceRange) * 100
-              const bodyBottom = ((maxPrice - Math.min(dataPoint.open, dataPoint.close)) / priceRange) * 100
-              const wickTop = ((maxPrice - dataPoint.high) / priceRange) * 100
-              const wickBottom = ((maxPrice - dataPoint.low) / priceRange) * 100
-              const isGreen = dataPoint.close >= dataPoint.open
-
-              return (
-                <g key={index}>
-                  {/* Wick */}
-                  <line
-                    x1={`${x}%`}
-                    y1={`${wickTop}%`}
-                    x2={`${x}%`}
-                    y2={`${wickBottom}%`}
-                    stroke={isGreen ? "#22c55e" : "#ef4444"}
-                    strokeWidth="1"
-                  />
-                  {/* Body */}
-                  <rect
-                    x={`${x - 1}%`}
-                    y={`${bodyTop}%`}
-                    width="2%"
-                    height={`${Math.abs(bodyBottom - bodyTop)}%`}
-                    fill={isGreen ? "#22c55e" : "#ef4444"}
-                    opacity="0.8"
-                  />
-                </g>
-              )
-            })}
-          </svg>
-
-          {/* Price labels */}
-          <div className="absolute left-2 top-2 text-xs text-muted-foreground">
-            {formatPrice(maxPrice)}
-          </div>
-          <div className="absolute left-2 bottom-2 text-xs text-muted-foreground">
-            {formatPrice(minPrice)}
-          </div>
-        </div>
-
-        {/* Date range */}
-        <div className="flex justify-between text-xs text-muted-foreground mt-2">
-          <span>{stockData.data_range.start}</span>
-          <span>{stockData.data_range.end}</span>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-        <div>
-          <div className="text-muted-foreground">Market Cap</div>
-          <div className="font-medium">{formatMarketCap(stockData.market_cap)}</div>
-        </div>
-        <div>
-          <div className="text-muted-foreground">P/E Ratio</div>
-          <div className="font-medium">{stockData.pe_ratio}</div>
-        </div>
-        <div>
-          <div className="text-muted-foreground">Dividend Yield</div>
-          <div className="font-medium">{stockData.dividend_yield}</div>
-        </div>
-        <div>
-          <div className="text-muted-foreground">Data Points</div>
-          <div className="font-medium">{stockData.data_points}</div>
-        </div>
-      </div>
-
-      {/* Last updated */}
-      <div className="mt-4 pt-4 border-t text-xs text-muted-foreground">
-        Last updated: {format(new Date(stockData.last_updated), "MMM dd, yyyy 'at' h:mm a")}
-      </div>
-    </div>
-  )
-}
-
-const LoadingIndicator = () => (
-  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-    <div className="flex gap-1">
-      <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce" />
-      <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce [animation-delay:0.2s]" />
-      <div className="w-2 h-2 bg-primary/60 rounded-full animate-bounce [animation-delay:0.4s]" />
-    </div>
-    <span>Thinking...</span>
-  </div>
-)
-
-const MessageAvatar = ({ role }: { role: 'user' | 'assistant' }) => (
-  <div
-    className={cn(
-      "flex size-8 shrink-0 select-none items-center justify-center rounded-full border",
-      role === "user"
-        ? "bg-background border-border"
-        : "bg-primary/10 border-primary/20"
-    )}
-  >
-    {role === "user" ? (
-      <UserCircle className="size-4 text-foreground/80" />
-    ) : (
-      <Bot className="size-4 text-primary" />
-    )}
-  </div>
-)
-
-const SearchInput = ({
-  value,
-  onChange,
-  onSubmit,
-  isLoading,
-  placeholder = "Ask anything..."
-}: {
-  value: string
-  onChange: (value: string) => void
-  onSubmit: (e?: React.FormEvent) => void
-  isLoading: boolean
-  placeholder?: string
-}) => (
-  <div className="relative">
-    <div className="flex items-center bg-background border border-border rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/50 transition-all">
-      <Search className="size-4 text-muted-foreground ml-4 flex-shrink-0" />
-      <AutoResizeTextarea
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        className="flex-1 bg-transparent px-4 py-3 focus:outline-none resize-none min-h-[48px]"
-      />
-      <Button
-        type="submit"
-        size="icon"
-        disabled={isLoading || !value.trim()}
-        className="size-8 mr-2 rounded-full"
-        onClick={onSubmit}
-      >
-        {isLoading ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          <ArrowUpIcon className="size-4" />
-        )}
-      </Button>
-    </div>
-  </div>
-)
 
 export function ChatForm({ className }: { className?: string }) {
   const [input, setInput] = React.useState("")
@@ -522,159 +74,119 @@ export function ChatForm({ className }: { className?: string }) {
   }, [chatHandleInputChange, chatHandleSubmit, isLoading])
 
   // Render functions
-  const renderSearchResults = (searchResults: { results: SearchResult[] }) => {
-    // Validate search results structure
-    if (!searchResults?.results || !Array.isArray(searchResults.results) || searchResults.results.length === 0) {
-      return (
-        <div className="text-sm text-muted-foreground p-4 bg-muted/30 rounded-xl border border-border/30 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
-            <Search className="w-4 h-4" />
-            <span>No search results found</span>
-          </div>
-        </div>
-      )
-    }
-
-    return (
-      <div className="w-full mb-6">
-        <div className="mb-3">
-          <h4 className="text-sm font-semibold text-foreground/80 flex items-center gap-2">
-            <Search className="w-4 h-4" />
-            Search Results ({searchResults.results.length})
-          </h4>
-        </div>
-        <div className="overflow-x-auto pb-2">
-          <div className="flex gap-4 min-w-max">
-            {searchResults.results.map((result, i) => (
-              <SearchResultCard key={i} result={result} index={i} />
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   const renderToolPart = React.useCallback((part: ToolPart) => {
-    switch (part.type) {
-      case 'step-start':
-        return null
-
-      case 'tool-invocation': {
-        if (!part.toolInvocation) return null
-
-        const { toolName, result, state } = part.toolInvocation
-
-        switch (toolName) {
-          case 'search_web': {
-            if (state === 'streaming') {
-              return (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 bg-muted/20 rounded-lg border border-border/30">
-                  <Search className="w-4 h-4 animate-pulse" />
-                  <span>Searching the web...</span>
-                </div>
-              )
-            }
-
-            if (!result) return null
-
-            // Handle different result formats
-            try {
-              // Try to parse as JSON first
-              const searchResults = JSON.parse(result)
-              if (searchResults && searchResults.results && Array.isArray(searchResults.results)) {
-                return renderSearchResults(searchResults)
-              }
-            } catch (error) {
-              // If JSON parsing fails, check if it's a plain text response
-              console.warn('Search result is not valid JSON, treating as text:', result)
-            }
-
-            // Fallback: display as plain text if not valid JSON
-            return (
-              <div className="text-sm text-muted-foreground p-4 bg-muted/30 rounded-xl border border-border/30 backdrop-blur-sm">
-                <div className="flex items-start gap-2">
-                  <Bot className="w-4 h-4 mt-0.5 text-primary/70" />
-                  <span className="leading-relaxed">{result}</span>
-                </div>
-              </div>
-            )
-          }
-
-          case 'get_stock_data': {
-            if (state === 'streaming') {
-              return (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 bg-muted/20 rounded-lg border border-border/30">
-                  <TrendingUp className="w-4 h-4 animate-pulse" />
-                  <span>Fetching stock data...</span>
-                </div>
-              )
-            }
-
-            if (!result) return null
-
-            try {
-              const stockData: StockData = JSON.parse(result)
-              return <StockChart stockData={stockData} />
-            } catch (error) {
-              console.error('Failed to parse stock data:', error)
-              return (
-                <div className="text-sm text-red-500 p-4 bg-red-50 dark:bg-red-950/20 rounded-xl border border-red-200 dark:border-red-800">
-                  <div className="flex items-start gap-2">
-                    <TrendingDown className="w-4 h-4 mt-0.5" />
-                    <span>Error parsing stock data</span>
-                  </div>
-                </div>
-              )
-            }
-          }
-
-          default:
-            return (
-              <pre className="text-sm text-muted-foreground overflow-x-auto">
-                {JSON.stringify(part.toolInvocation, null, 2)}
-              </pre>
-            )
-        }
-      }
-
-      case 'text':
-        return <MarkdownRenderer content={(part as any).text} />
-
-      default:
-        return null
-    }
+    return <ToolRenderer part={part} />
   }, [])
 
   // Render empty state
   const renderEmptyState = () => (
-    <div className="flex flex-col items-center justify-center min-h-screen w-full max-w-2xl mx-auto px-4">
-      <div className="text-center mb-16">
+    <div className="flex flex-col items-center justify-center min-h-screen w-full max-w-4xl mx-auto px-4">
+      {/* Background gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5 pointer-events-none" />
+      
+      {/* Hero section */}
+      <div className="text-center mb-12 relative z-10">
         <div className="mb-8">
-          <Command className="size-12 text-foreground mx-auto mb-4" strokeWidth={1.5} />
-          <h1 className="text-3xl font-semibold text-foreground mb-2">
+          {/* Enhanced icon with gradient background */}
+          {/* <div className="relative mb-6 animate-float">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-accent/20 rounded-full blur-xl scale-150 animate-pulse-slow" />
+            <div className="relative bg-gradient-to-br from-primary to-primary/80 p-4 rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300">
+              <Command className="size-8 text-primary-foreground" strokeWidth={1.5} />
+            </div>
+          </div> */}
+          
+          {/* Enhanced title with gradient text */}
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-foreground via-foreground/90 to-foreground/70 bg-clip-text text-transparent mb-4">
             AI Search
           </h1>
-          <p className="text-muted-foreground">
-            Ask me anything and I'll search for answers
+          <p className="text-xl text-muted-foreground max-w-md mx-auto leading-relaxed">
+            Ask me anything and I'll search the web for comprehensive answers
           </p>
+        </div>
+
+        {/* Feature highlights */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-12 max-w-2xl mx-auto">
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-card/50 border border-border/50 backdrop-blur-sm hover:bg-card/70 hover:border-border/70 transition-all duration-200 group">
+            <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+              <Search className="size-4 text-primary" />
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-sm">Real-time Search</p>
+              <p className="text-xs text-muted-foreground">Live web results</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-card/50 border border-border/50 backdrop-blur-sm hover:bg-card/70 hover:border-border/70 transition-all duration-200 group">
+            <div className="p-2 rounded-lg bg-accent/10 group-hover:bg-accent/20 transition-colors">
+              <Command className="size-4 text-accent-foreground" />
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-sm">AI Powered</p>
+              <p className="text-xs text-muted-foreground">Smart analysis</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3 p-4 rounded-xl bg-card/50 border border-border/50 backdrop-blur-sm hover:bg-card/70 hover:border-border/70 transition-all duration-200 group">
+            <div className="p-2 rounded-lg bg-secondary/10 group-hover:bg-secondary/20 transition-colors">
+              <svg className="size-4 text-secondary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-sm">Instant Results</p>
+              <p className="text-xs text-muted-foreground">Fast responses</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="relative w-full">
-        <SearchInput
-          value={input}
-          onChange={(value) => {
-            handleInputValueChange(value)
-            chatHandleInputChange({ target: { value } } as React.ChangeEvent<HTMLTextAreaElement>)
-          }}
-          onSubmit={handleSubmit}
-          isLoading={isLoading}
-          placeholder="Ask anything..."
-        />
-        <div className="mt-4 text-center">
-          <p className="text-xs text-muted-foreground">
-            Press <kbd className="rounded border px-1.5 py-0.5 text-xs bg-muted">Enter</kbd> to search
+      {/* Enhanced search form */}
+      <form onSubmit={handleSubmit} className="relative w-full max-w-2xl z-10">
+        <div className="relative">
+          {/* Subtle glow effect */}
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-accent/20 rounded-3xl blur-xl scale-105 opacity-50" />
+          <div className="relative">
+            <SearchInput
+              value={input}
+              onChange={(value) => {
+                handleInputValueChange(value)
+                chatHandleInputChange({ target: { value } } as React.ChangeEvent<HTMLTextAreaElement>)
+              }}
+              onSubmit={handleSubmit}
+              isLoading={isLoading}
+              placeholder="Ask anything... Try 'What's the weather like today?' or 'Explain quantum computing'"
+            />
+          </div>
+        </div>
+        
+        {/* Enhanced help text */}
+        <div className="mt-6 text-center">
+          <p className="text-sm text-muted-foreground mb-3">
+            Press <kbd className="rounded-lg border border-border/50 px-2 py-1 text-xs bg-muted/50 font-mono shadow-sm">Enter</kbd> to search or <kbd className="rounded-lg border border-border/50 px-2 py-1 text-xs bg-muted/50 font-mono shadow-sm">Shift + Enter</kbd> for new line
           </p>
+          
+          {/* Example queries */}
+          <div className="flex flex-wrap justify-center gap-2 max-w-lg mx-auto">
+            {[
+              "Latest tech news",
+              "How to cook pasta",
+              "Stock market today",
+              "Weather forecast"
+            ].map((example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() => {
+                  setInput(example)
+                  chatHandleInputChange({ target: { value: example } } as React.ChangeEvent<HTMLTextAreaElement>)
+                  chatHandleSubmit({} as React.FormEvent)
+                }}
+                className="text-xs px-3 py-1.5 rounded-full bg-muted/50 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground border border-border/30 hover:border-border/60"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
         </div>
       </form>
     </div>
