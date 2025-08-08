@@ -100,7 +100,7 @@ export function ChatForm({ className }: { className?: string }) {
             Questily
           </h1>
           <p className="text-xl text-muted-foreground max-w-md mx-auto leading-relaxed">
-            Ask me anything and I'll search the web for comprehensive answers
+            Ask me anything and I&apos;ll search the web for comprehensive answers
           </p>
         </div>
 
@@ -219,7 +219,7 @@ export function ChatForm({ className }: { className?: string }) {
                 if ('text' in part) {
                   return (
                     <div key={partIndex} className="leading-relaxed">
-                      <MarkdownRenderer content={part.text} />
+                      <MarkdownRenderer content={part.text || ''} />
                     </div>
                   )
                 } else {

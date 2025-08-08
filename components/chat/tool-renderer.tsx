@@ -2,14 +2,14 @@
 
 import React from "react"
 import { Search, TrendingUp, TrendingDown, Bot } from "lucide-react"
-import { SearchResults, SearchResult } from "@/components/search-results"
+import { SearchResults } from "@/components/search-results"
 import { StockChart, StockData } from "@/components/stock-chart"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 
 export interface ToolInvocation {
   toolName: string
   toolCallId: string
-  args: any
+  args: Record<string, unknown>
   result?: string
   state: string
   step: number
@@ -19,10 +19,11 @@ export interface ToolPart {
   type: string
   toolCallId?: string
   state?: 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
-  input?: any
-  output?: any
+  input?: Record<string, unknown>
+  output?: Record<string, unknown>
   errorText?: string
   toolInvocation?: ToolInvocation
+  text?: string
 }
 
 interface ToolRendererProps {
@@ -59,7 +60,7 @@ export const ToolRenderer = ({ part }: ToolRendererProps) => {
             if (searchResults && searchResults.results && Array.isArray(searchResults.results)) {
               return <SearchResults results={searchResults.results} />
             }
-          } catch (error) {
+          } catch {
             // If JSON parsing fails, check if it's a plain text response
             console.warn('Search result is not valid JSON, treating as text:', result)
           }
@@ -113,7 +114,7 @@ export const ToolRenderer = ({ part }: ToolRendererProps) => {
     }
 
     case 'text':
-      return <MarkdownRenderer content={(part as any).text} />
+      return <MarkdownRenderer content={part.text || ''} />
 
     default:
       return null
